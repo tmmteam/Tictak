@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- MongoDB Setup ---
-MONGO_URI = os.getenv("MONGO_URI", "your_mongo_uri")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://Ishuxd:ishusomuxd@ishuxd.78ljc.mongodb.net/?retryWrites=true&w=majority&appName=Ishuxd")
 client = MongoClient(MONGO_URI)
 db = client["tictactoe_db"]
 stats_col = db["user_stats"]
