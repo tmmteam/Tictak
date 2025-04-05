@@ -1,5 +1,2 @@
-python-telegram-bot==13.15
-certifi>=2020.12.5
-chardet>=3.0.4
-idna>=2.10
-urllib3>=1.26.5
+python-telegram-bot==20.7
+asyncio==3.4.3
