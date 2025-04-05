@@ -106,7 +106,18 @@ def get_history(chat_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(
         photo=WELCOME_IMG_PATH,
-        caption="Welcome to Tic Tac Toe Bot! Use /join to participate."
+        caption="🎉 Welcome to the Ultimate Tic Tac Toe Bot! 🎉
+Ready to put your skills to the test? Challenge your friends and climb the leaderboard! 🚀
+How to Play:
+1️⃣ Use /join to join a game (2 players maximum).
+2️⃣ Hit /new to start a new game once both players are ready.
+3️⃣ Play using your emojis, make your move, and try to win! 🏆
+4️⃣ At any time, use /end to end the game or /reset to restart the board.
+Commands You’ll Love:
+📝 /leaderboard – See who’s ruling the game today!
+💥 /mystats – Check your performance, wins, and losses.
+🔄 /history – Relive the epic moments of your past games.
+Let the games begin! 🕹️ And may the best player win! 🔥"
     )
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
