@@ -100,7 +100,7 @@ Add other handlers from your previous code: status, leaderboard, mystats, histor
 
 --- Main ---
 
-def main(): token = os.getenv("BOT_TOKEN") app = ApplicationBuilder().token(token).build()
+def main(): token = os.getenv("BOT_TOKEN","7801621884:AAHmK4MjTuEanUftEhQJezANh0fiF1cLGTY") app = ApplicationBuilder().token(token).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("join", join))
