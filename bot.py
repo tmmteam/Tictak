@@ -1,12 +1,14 @@
-
 import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from telegram import Update, InputFile
+from telegram import (
+    Update, InputFile, InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    filters, ContextTypes
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    ContextTypes, MessageHandler, filters
 )
 from pymongo import MongoClient
 
@@ -37,6 +39,22 @@ def format_board(board):
         f"{board[3]} | {board[4]} | {board[5]}",
         f"{board[6]} | {board[7]} | {board[8]}"
     ])
+
+def render_board(chat_id):
+    game = games[chat_id]
+    board = game['board']
+    keyboard = []
+
+    for i in range(0, 9, 3):
+        row = [
+            InlineKeyboardButton(
+                text=board[j] if board[j] != ' ' else '⬜',
+                callback_data=str(j)
+            ) for j in range(i, i + 3)
+        ]
+        keyboard.append(row)
+
+    return InlineKeyboardMarkup(keyboard)
 
 def check_winner(board):
     win_pos = [
@@ -89,9 +107,10 @@ def get_history(chat_id):
 
 # --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with open(WELCOME_IMG_PATH, 'rb') as img:
-        await update.message.reply_photo(photo=InputFile(img),
-            caption="Welcome to Tic Tac Toe Bot! Use /join to participate.")
+    await update.message.reply_photo(
+        photo=WELCOME_IMG_PATH,
+        caption="Welcome to Tic Tac Toe Bot! Use /join to participate."
+    )
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -125,7 +144,8 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game['active'] = True
     game['last_move_time'] = datetime.now()
     await update.message.reply_text(
-        f"Game started!\n{game['players'][0].mention_html()} vs {game['players'][1].mention_html()}\n\n{format_board(game['board'])}\n\n{game['players'][0].mention_html()}'s turn.",
+        f"Game started!\n{game['players'][0].mention_html()} vs {game['players'][1].mention_html()}\n\n{game['players'][0].mention_html()}'s turn.",
+        reply_markup=render_board(chat_id),
         parse_mode="HTML"
     )
     asyncio.create_task(timeout_check(chat_id, context.application))
@@ -140,49 +160,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in games:
         games[chat_id]['board'] = [' '] * 9
         games[chat_id]['turn'] = 0
-        await update.message.reply_text("Board reset.")
-
-async def move(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    game = games.get(chat_id)
-    if not game or not game['active']:
-        return
-
-    user = update.effective_user
-    if user != game['players'][game['turn']]:
-        return
-
-    try:
-        pos = int(update.message.text.strip()) - 1
-        if not 0 <= pos <= 8 or game['board'][pos] != ' ':
-            return await update.message.reply_text("Invalid move.")
-
-        emoji = user_emojis.get(user.id, DEFAULT_EMOJIS[game['turn']])
-        game['board'][pos] = emoji
-        game['last_move_time'] = datetime.now()
-
-        if check_winner(game['board']):
-            winner = user
-            loser = game['players'][1 - game['turn']]
-            await update.message.reply_text(f"{format_board(game['board'])}\n\nCongrats {winner.mention_html()}! You win!", parse_mode="HTML")
-            update_stats(winner.id, 'win')
-            update_stats(loser.id, 'loss')
-            save_history(chat_id, f"{winner.first_name} defeated {loser.first_name}")
-            games.pop(chat_id, None)
-            return
-
-        if is_draw(game['board']):
-            await update.message.reply_text(f"{format_board(game['board'])}\n\nIt's a draw!")
-            for player in game['players']:
-                update_stats(player.id, 'draw')
-            save_history(chat_id, "Game ended in draw")
-            games.pop(chat_id, None)
-            return
-
-        game['turn'] = 1 - game['turn']
-        await update.message.reply_text(f"{format_board(game['board'])}\n\n{game['players'][game['turn']].mention_html()}'s turn.", parse_mode="HTML")
-    except:
-        return
+        await update.message.reply_text("Board reset.", reply_markup=render_board(chat_id))
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -220,9 +198,59 @@ async def set_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_emojis[user.id] = args[0]
     await update.message.reply_text(f"Your emoji is now: {args[0]}")
 
+# --- Button Handler for Moves ---
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+    game = games.get(chat_id)
+
+    if not game or not game['active']:
+        return
+
+    user = update.effective_user
+    if user != game['players'][game['turn']]:
+        return
+
+    pos = int(query.data)
+    if game['board'][pos] != ' ':
+        return
+
+    emoji = user_emojis.get(user.id, DEFAULT_EMOJIS[game['turn']])
+    game['board'][pos] = emoji
+    game['last_move_time'] = datetime.now()
+
+    if check_winner(game['board']):
+        winner = user
+        loser = game['players'][1 - game['turn']]
+        await query.edit_message_text(
+            text=f"{format_board(game['board'])}\n\nCongrats {winner.mention_html()}! You win!",
+            parse_mode="HTML"
+        )
+        update_stats(winner.id, 'win')
+        update_stats(loser.id, 'loss')
+        save_history(chat_id, f"{winner.first_name} defeated {loser.first_name}")
+        games.pop(chat_id, None)
+        return
+
+    if is_draw(game['board']):
+        await query.edit_message_text(
+            text=f"{format_board(game['board'])}\n\nIt's a draw!"
+        )
+        for player in game['players']:
+            update_stats(player.id, 'draw')
+        save_history(chat_id, "Game ended in draw")
+        games.pop(chat_id, None)
+        return
+
+    game['turn'] = 1 - game['turn']
+    await query.edit_message_reply_markup(
+        reply_markup=render_board(chat_id)
+    )
+
 # --- Main ---
 def main():
-    token = os.getenv("BOT_TOKEN","7313059877:AAEuRl43jQbDd9yIRcW-AnwKH8BWWHn9gXE")  # BOT_TOKEN env var recommended
+    token = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -235,7 +263,7 @@ def main():
     app.add_handler(CommandHandler("mystats", mystats))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("emoji", set_emoji))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, move))
+    app.add_handler(CallbackQueryHandler(button_click))
 
     print("Bot is running...")
     app.run_polling()
