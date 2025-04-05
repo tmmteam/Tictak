@@ -226,7 +226,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main ---
 def main():
-    token = os.getenv("BOT_TOKEN", "7313059877:AAEuRl43jQbDd9yIRcW-AnwKH8BWWHn9gXE")
+    token = os.getenv("BOT_TOKEN", "7801621884:AAHmK4MjTuEanUftEhQJezANh0fiF1cLGTY")
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
