@@ -137,4 +137,111 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    games
+    games.pop(chat_id, None)
+    await update.message.reply_text("Game ended and data cleared.")
+
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id in games:
+        games[chat_id]['board'] = [' '] * 9
+        games[chat_id]['turn'] = 0
+        await update.message.reply_text("Board reset.", reply_markup=build_keyboard(games[chat_id]['board']))
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    game = games.get(chat_id)
+    if not game or not game['active']:
+        return
+
+    user = query.from_user
+    if user != game['players'][game['turn']]:
+        return
+
+    pos = int(query.data)
+    if game['board'][pos] != ' ':
+        return
+
+    emoji = DEFAULT_EMOJIS[game['turn']]
+    game['board'][pos] = emoji
+    game['last_move_time'] = datetime.now()
+
+    if check_winner(game['board']):
+        winner = user
+        loser = game['players'][1 - game['turn']]
+        await query.edit_message_text(
+            f"{winner.mention_html()} wins!\n",
+            parse_mode="HTML",
+            reply_markup=build_keyboard(game['board'])
+        )
+        update_stats(winner.id, 'win')
+        update_stats(loser.id, 'loss')
+        save_history(chat_id, f"{winner.first_name} defeated {loser.first_name}")
+        games.pop(chat_id, None)
+        return
+
+    if is_draw(game['board']):
+        await query.edit_message_text("It's a draw!", reply_markup=build_keyboard(game['board']))
+        for player in game['players']:
+            update_stats(player.id, 'draw')
+        save_history(chat_id, "Game ended in draw")
+        games.pop(chat_id, None)
+        return
+
+    game['turn'] = 1 - game['turn']
+    await query.edit_message_text(
+        f"{game['players'][game['turn']].mention_html()}'s turn.",
+        parse_mode="HTML",
+        reply_markup=build_keyboard(game['board'])
+    )
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    game = games.get(chat_id)
+    if game and game['active']:
+        await update.message.reply_text("Current game board:", reply_markup=build_keyboard(game['board']))
+    else:
+        await update.message.reply_text("No active game.")
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    top = stats_col.find().sort([("win", -1)]).limit(10)
+    text = "\n".join([f"{doc['user_id']}: {doc.get('win',0)}W-{doc.get('loss',0)}L-{doc.get('draw',0)}D" for doc in top])
+    await update.message.reply_text("Leaderboard:\n" + text)
+
+async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    stats = get_stats(user.id)
+    await update.message.reply_text(
+        f"Your stats:\nWins: {stats.get('win', 0)}\nLosses: {stats.get('loss', 0)}\nDraws: {stats.get('draw', 0)}"
+    )
+
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    hist = get_history(chat_id)
+    if hist:
+        await update.message.reply_text("Game History:\n" + "\n".join(hist))
+    else:
+        await update.message.reply_text("No history yet.")
+
+# --- Main ---
+def main():
+    token = os.getenv("BOT_TOKEN", "7313059877:AAEuRl43jQbDd9yIRcW-AnwKH8BWWHn9gXE")
+    app = ApplicationBuilder().token(token).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("new", new_game))
+    app.add_handler(CommandHandler("end", end))
+    app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("mystats", mystats))
+    app.add_handler(CommandHandler("history", history))
+    app.add_handler(CallbackQueryHandler(button))
+
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
