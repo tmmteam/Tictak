@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- MongoDB Setup ---
-MONGO_URI = os.getenv("MONGO_URI", "your-mongodb-uri")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://Ishuxd:ishusomuxd@ishuxd.78ljc.mongodb.net/?retryWrites=true&w=majority&appName=Ishuxd")
 client = MongoClient(MONGO_URI)
 db = client["tictactoe_db"]
 stats_col = db["user_stats"]
@@ -28,7 +28,7 @@ invites = {}
 
 # --- Constants ---
 DEFAULT_EMOJIS = ['❌', '⭕']
-WELCOME_IMG_PATH = 'welcome.jpg'
+WELCOME_IMG_PATH = 'https://envs.sh/ppU.jpg'
 TIMEOUT = 60
 
 # --- Utility Functions ---
@@ -243,7 +243,7 @@ async def single_move(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main ---
 
 def main():
-    token = os.getenv("BOT_TOKEN")
+    token = os.getenv("BOT_TOKEN","7801621884:AAHmK4MjTuEanUftEhQJezANh0fiF1cLGTY")
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
