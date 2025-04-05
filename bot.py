@@ -27,7 +27,7 @@ user_emojis = {}
 
 # --- Constants ---
 DEFAULT_EMOJIS = ['❌', '⭕']
-WELCOME_IMG_PATH = 'welcome.jpg'
+WELCOME_IMG_PATH = 'https://envs.sh/rKZ.jpg'
 TIMEOUT = 60
 
 # --- Utility Functions ---
