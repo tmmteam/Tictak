@@ -269,7 +269,7 @@ async def set_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main ---
 def main():
-    token = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
+    token = os.getenv("BOT_TOKEN", "7801621884:AAHmK4MjTuEanUftEhQJezANh0fiF1cLGTY")
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
