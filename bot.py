@@ -1,272 +1,100 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext, ChatMemberHandler
-from threading import Timer
-import logging
-import time
+import json import os import asyncio import logging from telegram import Update, InputFile, User from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes) from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+Enable logging
 
-# Game state per group
-games = {}
-leaderboard = {}
+logging.basicConfig(level=logging.INFO) logger = logging.getLogger(name)
 
-WELCOME_IMAGE_URL = "https://your-image-url.com/welcome.jpg"  # Replace with your image
+Game storage (multi-group support)
 
-# Default emojis
-DEFAULT_EMOJIS = {0: "❌", 1: "⭕"}
-EMPTY = "⬜"
+games = {} user_stats = {}
 
-# Timeout duration in seconds
-TIMEOUT = 120
+Emoji defaults
 
+DEFAULT_EMOJIS = ['❌', '⭕'] user_emojis = {}
 
-def start(update: Update, context: CallbackContext):
-    chat = update.effective_chat
-    if chat.type == "private":
-        context.bot.send_photo(
-            chat_id=chat.id,
-            photo=WELCOME_IMAGE_URL,
-            caption="Hi there! I'm your Tic Tac Toe bot. Add me to a group and type /new to start a game!"
-        )
-    else:
-        context.bot.send_photo(
-            chat_id=chat.id,
-            photo=WELCOME_IMAGE_URL,
-            caption="Welcome! Use /new to start a game."
-        )
+File paths
 
+WELCOME_IMG_PATH = 'welcome.jpg' STATS_FILE = 'stats.json'
 
-def bot_added(update: Update, context: CallbackContext):
-    member = update.my_chat_member
-    if member.new_chat_member.status == "member":
-        context.bot.send_photo(
-            chat_id=member.chat.id,
-            photo=WELCOME_IMAGE_URL,
-            caption="Hello Group! I'm Tic Tac Bot.\nUse /new to begin a game!"
-        )
+Timeout duration (seconds)
 
+TIMEOUT = 60
 
-def new_game(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    games[chat_id] = {
-        "players": [],
-        "board": [EMPTY] * 9,
-        "turn": None,
-        "active": False,
-        "emojis": DEFAULT_EMOJIS.copy(),
-        "timeout": None,
-        "last_move_time": time.time()
-    }
-    update.message.reply_text("Game created! Two players use /join to play.")
+--- Utility Functions ---
 
+def format_board(board): return "\n".join([ f"{board[0]} | {board[1]} | {board[2]}", f"{board[3]} | {board[4]} | {board[5]}", f"{board[6]} | {board[7]} | {board[8]}" ])
 
-def join_game(update: Update, context: CallbackContext):
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    game = games.get(chat_id)
+def check_winner(board): win_pos = [[0,1,2],[3,4,5],[6,7,8], [0,3,6],[1,4,7],[2,5,8], [0,4,8],[2,4,6]] for a,b,c in win_pos: if board[a] == board[b] == board[c] and board[a] != ' ': return True return False
 
-    if not game:
-        update.message.reply_text("Start a game first using /new.")
+def is_draw(board): return ' ' not in board
+
+async def timeout_check(group_id, app): await asyncio.sleep(TIMEOUT) game = games.get(group_id) if game and game['active']: if datetime.now() - game['last_move_time'] > timedelta(seconds=TIMEOUT): user = game['players'][game['turn']] await app.bot.send_message(group_id, f"{user.mention_html()} took too long! Game ended.", parse_mode="HTML") games.pop(group_id, None)
+
+--- Command Handlers ---
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE): chat = update.effective_chat if chat.type == 'private' or chat.type == 'group': with open(WELCOME_IMG_PATH, 'rb') as img: await update.message.reply_photo(photo=InputFile(img), caption="Welcome to Tic Tac Toe Bot! Use /join to participate.")
+
+async def join(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id user = update.effective_user game = games.setdefault(chat_id, {'players': [], 'board': [' '] * 9, 'turn': 0, 'active': False, 'history': [], 'last_move_time': datetime.now()}) if user in game['players']: await update.message.reply_text("You already joined.") elif len(game['players']) < 2: game['players'].append(user) await update.message.reply_text(f"{user.first_name} joined the game.") if len(game['players']) == 2: await update.message.reply_text("2 players joined! Use /new to start the game.") else: await update.message.reply_text("Game already has 2 players.")
+
+async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id game = games.get(chat_id) if not game or len(game['players']) != 2: await update.message.reply_text("Need 2 players to start. Use /join.") return game['board'] = [' '] * 9 game['turn'] = 0 game['active'] = True game['last_move_time'] = datetime.now() await update.message.reply_text(f"Game started!\n{game['players'][0].mention_html()} vs {game['players'][1].mention_html()}\n\n{format_board(game['board'])}\n\n{game['players'][0].mention_html()}'s turn.", parse_mode="HTML") asyncio.create_task(timeout_check(chat_id, context.application))
+
+async def end(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id games.pop(chat_id, None) await update.message.reply_text("Game ended and data cleared.")
+
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id if chat_id in games: games[chat_id]['board'] = [' '] * 9 games[chat_id]['turn'] = 0 await update.message.reply_text("Board reset.")
+
+async def move(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id game = games.get(chat_id) if not game or not game['active']: return user = update.effective_user if user != game['players'][game['turn']]: return try: pos = int(update.message.text.strip()) - 1 if not 0 <= pos <= 8 or game['board'][pos] != ' ': return await update.message.reply_text("Invalid move.") emoji = user_emojis.get(user.id, DEFAULT_EMOJIS[game['turn']]) game['board'][pos] = emoji game['last_move_time'] = datetime.now()
+
+if check_winner(game['board']):
+        winner = user
+        loser = game['players'][1 - game['turn']]
+        await update.message.reply_text(f"{format_board(game['board'])}\n\nCongrats {winner.mention_html()}! You win!", parse_mode="HTML")
+        user_stats.setdefault(winner.id, {'win': 0, 'loss': 0, 'draw': 0})['win'] += 1
+        user_stats.setdefault(loser.id, {'win': 0, 'loss': 0, 'draw': 0})['loss'] += 1
+        game['history'].append(f"{winner.first_name} defeated {loser.first_name}")
+        games.pop(chat_id, None)
         return
 
-    if user.id in game["players"]:
-        update.message.reply_text("You're already in the game.")
+    if is_draw(game['board']):
+        await update.message.reply_text(f"{format_board(game['board'])}\n\nIt's a draw!")
+        for player in game['players']:
+            user_stats.setdefault(player.id, {'win': 0, 'loss': 0, 'draw': 0})['draw'] += 1
+        game['history'].append("Game ended in draw")
+        games.pop(chat_id, None)
         return
 
-    if len(game["players"]) >= 2:
-        update.message.reply_text("Two players already joined.")
-        return
+    game['turn'] = 1 - game['turn']
+    await update.message.reply_text(f"{format_board(game['board'])}\n\n{game['players'][game['turn']].mention_html()}'s turn.", parse_mode="HTML")
+except:
+    return
 
-    game["players"].append(user.id)
-    update.message.reply_text(f"{user.first_name} joined!")
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id game = games.get(chat_id) if game and game['active']: await update.message.reply_text(f"Current board:\n{format_board(game['board'])}") else: await update.message.reply_text("No active game.")
 
-    if len(game["players"]) == 2:
-        game["turn"] = game["players"][0]
-        game["active"] = True
-        game["last_move_time"] = time.time()
-        update.message.reply_text("Game started!")
-        send_board(update, context)
-        schedule_timeout(chat_id, context)
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE): text = "\n".join([f"{uid}: {data['win']}W-{data['loss']}L-{data['draw']}D" for uid, data in user_stats.items()]) await update.message.reply_text("Leaderboard:\n" + text)
 
+async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE): user = update.effective_user stats = user_stats.get(user.id, {'win': 0, 'loss': 0, 'draw': 0}) await update.message.reply_text(f"Your stats:\nWins: {stats['win']}\nLosses: {stats['loss']}\nDraws: {stats['draw']}")
 
-def send_board(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    game = games[chat_id]
-    board = game["board"]
-    keyboard = []
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE): chat_id = update.effective_chat.id game = games.get(chat_id) if game and game['history']: await update.message.reply_text("Game History:\n" + "\n".join(game['history'])) else: await update.message.reply_text("No history yet.")
 
-    for i in range(0, 9, 3):
-        row = [InlineKeyboardButton(board[i + j], callback_data=str(i + j)) for j in range(3)]
-        keyboard.append(row)
+async def set_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE): user = update.effective_user args = context.args if len(args) != 1: return await update.message.reply_text("Usage: /emoji [emoji]") user_emojis[user.id] = args[0] await update.message.reply_text(f"Your emoji is now: {args[0]}")
 
-    symbol = game["emojis"][0] if game["turn"] == game["players"][0] else game["emojis"][1]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+--- Main ---
 
-    context.bot.send_message(
-        chat_id=chat_id,
-        text=f"Turn: {symbol}",
-        reply_markup=reply_markup
-    )
+def main(): token = "YOUR_BOT_TOKEN_HERE" app = ApplicationBuilder().token(token).build()
 
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("join", join))
+app.add_handler(CommandHandler("new", new_game))
+app.add_handler(CommandHandler("end", end))
+app.add_handler(CommandHandler("reset", reset))
+app.add_handler(CommandHandler("status", status))
+app.add_handler(CommandHandler("leaderboard", leaderboard))
+app.add_handler(CommandHandler("mystats", mystats))
+app.add_handler(CommandHandler("history", history))
+app.add_handler(CommandHandler("emoji", set_emoji))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, move))
 
-def button(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat.id
-    game = games.get(chat_id)
+print("Bot is running...")
+app.run_polling()
 
-    if not game or not game["active"]:
-        query.answer("Game not active.")
-        return
+if name == "main": main()
 
-    if user.id != game["turn"]:
-        query.answer("Not your turn.")
-        return
-
-    index = int(query.data)
-    if game["board"][index] != EMPTY:
-        query.answer("Already taken.")
-        return
-
-    symbol = game["emojis"][0] if user.id == game["players"][0] else game["emojis"][1]
-    game["board"][index] = symbol
-    game["last_move_time"] = time.time()
-
-    winner = check_winner(game["board"])
-    if winner:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text=f"Congrats {user.mention_html()}! You won!",
-            parse_mode='HTML'
-        )
-        leaderboard[user.id] = leaderboard.get(user.id, 0) + 1
-        game["active"] = False
-        return
-
-    if EMPTY not in game["board"]:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text=f"It's a draw between {context.bot.get_chat_member(chat_id, game['players'][0]).user.first_name} and {context.bot.get_chat_member(chat_id, game['players'][1]).user.first_name}!"
-        )
-        game["active"] = False
-        return
-
-    game["turn"] = game["players"][1] if user.id == game["players"][0] else game["players"][0]
-    query.answer()
-    send_board(update, context)
-    schedule_timeout(chat_id, context)
-
-
-def check_winner(b):
-    combos = [(0,1,2), (3,4,5), (6,7,8),
-              (0,3,6), (1,4,7), (2,5,8),
-              (0,4,8), (2,4,6)]
-    for a,b,c in combos:
-        if games and games[next(iter(games))]["board"][a] == games[next(iter(games))]["board"][b] == games[next(iter(games))]["board"][c] != EMPTY:
-            return True
-    return False
-
-
-def end_game(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    if chat_id in games:
-        games.pop(chat_id)
-        update.message.reply_text("Game ended.")
-    else:
-        update.message.reply_text("No game running.")
-
-
-def reset_board(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    game = games.get(chat_id)
-    if not game:
-        update.message.reply_text("No game found.")
-        return
-
-    game["board"] = [EMPTY] * 9
-    game["last_move_time"] = time.time()
-    update.message.reply_text("Board reset!")
-    send_board(update, context)
-
-
-def game_status(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    game = games.get(chat_id)
-    if not game or not game["active"]:
-        update.message.reply_text("No active game.")
-        return
-
-    p1 = context.bot.get_chat_member(chat_id, game["players"][0]).user.first_name
-    p2 = context.bot.get_chat_member(chat_id, game["players"][1]).user.first_name
-    turn = p1 if game["turn"] == game["players"][0] else p2
-    update.message.reply_text(f"{p1} vs {p2}\nCurrent turn: {turn}")
-
-
-def emoji_command(update: Update, context: CallbackContext):
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    game = games.get(chat_id)
-    if not game or user.id not in game["players"]:
-        update.message.reply_text("You must join a game first.")
-        return
-
-    if len(context.args) != 1:
-        update.message.reply_text("Usage: /emoji <emoji>")
-        return
-
-    emoji = context.args[0]
-    index = game["players"].index(user.id)
-    game["emojis"][index] = emoji
-    update.message.reply_text(f"Your emoji has been set to {emoji}!")
-
-
-def show_leaderboard(update: Update, context: CallbackContext):
-    if not leaderboard:
-        update.message.reply_text("Leaderboard is empty.")
-        return
-
-    lines = ["🏆 Leaderboard:"]
-    for user_id, score in sorted(leaderboard.items(), key=lambda x: x[1], reverse=True):
-        try:
-            user = context.bot.get_chat_member(update.effective_chat.id, user_id).user
-            lines.append(f"{user.first_name}: {score}")
-        except:
-            lines.append(f"User {user_id}: {score}")
-    update.message.reply_text("\n".join(lines))
-
-
-def schedule_timeout(chat_id, context: CallbackContext):
-    def timeout_check():
-        game = games.get(chat_id)
-        if game and game["active"] and (time.time() - game["last_move_time"] > TIMEOUT):
-            context.bot.send_message(chat_id=chat_id, text="Game ended due to inactivity.")
-            games.pop(chat_id, None)
-
-    timer = Timer(TIMEOUT + 1, timeout_check)
-    games[chat_id]["timeout"] = timer
-    timer.start()
-
-
-def main():
-    TOKEN = 'YOUR_BOT_TOKEN_HERE'
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(ChatMemberHandler(bot_added, chat_member_types=["my_chat_member"]))
-    dp.add_handler(CommandHandler("new", new_game))
-    dp.add_handler(CommandHandler("join", join_game))
-    dp.add_handler(CommandHandler("end", end_game))
-    dp.add_handler(CommandHandler("reset", reset_board))
-    dp.add_handler(CommandHandler("status", game_status))
-    dp.add_handler(CommandHandler("emoji", emoji_command))
-    dp.add_handler(CommandHandler("leaderboard", show_leaderboard))
-    dp.add_handler(CallbackQueryHandler(button))
-
-    updater.start_polling()
-    updater.idle()
-
-
-if __name__ == '__main__':
-    main()
