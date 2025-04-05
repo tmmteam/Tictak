@@ -169,9 +169,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
-        [InlineKeyboardButton("Today", callback_data="leaderboard_today")],
-        [InlineKeyboardButton("Global", callback_data="leaderboard_global")],
-        [InlineKeyboardButton("Overall", callback_data="leaderboard_overall")]
+        [InlineKeyboardButton("Today🗓", callback_data="leaderboard_today")],
+        [InlineKeyboardButton("Global🌎", callback_data="leaderboard_global")],
+        [InlineKeyboardButton("Overall📈", callback_data="leaderboard_overall")]
     ]
     await update.message.reply_text(
         "Choose a leaderboard:",
@@ -202,7 +202,7 @@ async def handle_leaderboard_button(update: Update, context: ContextTypes.DEFAUL
         wins = doc.get("win", 0)
         losses = doc.get("loss", 0)
         draws = doc.get("draw", 0)
-        lines.append(f"{username}: {wins}W - {losses}L - {draws}D")
+        lines.append(f"{username}: {wins}Win💫 - {losses}Loss💔 - {draws}Draw🤝")
 
     text = f"{title}:\n\n" + "\n".join(lines) if lines else "No data yet."
     await query.edit_message_text(text=text)
