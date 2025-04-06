@@ -106,7 +106,7 @@ def get_history(chat_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(
         photo=WELCOME_IMG_PATH,
-        caption="🎉 Welcome to the Ultimate Tic Tac Toe Bot! 🎉
+        caption="Welcome🥰
 Ready to put your skills to the test? Challenge your friends and climb the leaderboard! 🚀"
     )
 
