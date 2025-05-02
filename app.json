@@ -1,0 +1,31 @@
+{
+  "name": "TicTacToe Bot",
+  "description": "A Telegram TicTacToe bot with leaderboard and emoji support",
+  "repository": "https://github.com/KALI-OFFICIAL1/Tiktak",
+  "keywords": ["telegram", "bot", "python", "game", "tictactoe"],
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "MongoDB URI for storing stats and history",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "addons": [],
+  "scripts": {
+    "postdeploy": "echo Deployment complete!"
+  }
+}
