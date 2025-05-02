@@ -258,10 +258,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"{format_board(game['board'])}\n\nCongrats {winner.mention_html()}! You win!",
             parse_mode="HTML"
         )
-        update_stats(winner.id, 'win', winner.username)
-        update_stats(loser.id, 'loss', loser.username)
-        stats_col.update_one({'user_id': winner.id}, {'$set': {'last_win': datetime.utcnow()}})
-        save_history(chat_id, f"{winner.first_name} defeated {loser.first_name}")
+        asyncio.create_task(update_stats(winner.id, 'win', winner.username))
+        asyncio.create_task(update_stats(loser.id, 'loss', loser.username))
+        asyncio.create_task(stats_col.update_one(
+            {'user_id': winner.id},
+            {'$set': {'last_win': datetime.utcnow()}}
+        ))
+        asyncio.create_task(save_history(chat_id, f"{winner.first_name} defeated {loser.first_name}"))
         games.pop(chat_id, None)
         return
 
@@ -270,8 +273,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"{format_board(game['board'])}\n\nIt's a draw!"
         )
         for player in game['players']:
-            update_stats(player.id, 'draw', player.username)
-        save_history(chat_id, "Game ended in draw")
+            asyncio.create_task(update_stats(player.id, 'draw', player.username))
+        asyncio.create_task(save_history(chat_id, "Game ended in draw"))
         games.pop(chat_id, None)
         return
 
